@@ -1,0 +1,828 @@
+
+#FEW  nchar
+.ignore<- function(diagnosis){
+  ignore.case=T
+  if(any(nchar(diagnosis)<=5)){
+    ignore.case=F
+  }else{
+    ignore.case
+  }
+  return(ignore.case)
+}
+
+#get full names of acronym
+mapAcronyms<- function(nm){
+  if(isTRUE(all(length(nm)>0L) & nchar(nm)>1L)){
+    as.character(
+      unlist(
+        sapply(nm, 
+               function(nm){
+                 ret.v<- abbreviations.ds[grepl(checkFormat(paste0("^",nm, "$"))
+                                                ,acronym
+                                                , ignore.case = T), FullName][1]
+                 if(length(ret.v)==0L | is.na(ret.v)){
+                   newName<-str_trim(gsub("\\.|[ \t]", "", str_trim(nm)))
+                   fullnm<-abbreviations.ds[grepl(checkFormat(paste0("^",nm, "$"))
+                                                  ,acronym
+                                                  , ignore.case = T), FullName][1]
+                   if(length(fullnm)==0L | is.na(fullnm)){
+                     return(nm)
+                   }else{
+                     return(unique(fullnm))
+                   }
+                 }else{
+                   return(unique(ret.v))
+                 }
+               })))->toReturn
+    if(all(is.element(toReturn, nm))){
+      return(toReturn)
+    }else{
+      toReturn<- paste0(toReturn,"|", nm)
+      return(paste(toReturn, collapse=" "))
+    }
+    
+    #}
+  }else{
+    return(NA_character_)
+  }
+}
+
+#is acronym
+is.acronym<- function(nm){
+  return(any(grep(checkFormat(nm), abbreviations.ds$acronym, ignore.case = F)) )
+}
+#map acroynms that are in btn a diagnosis
+
+get.acrynm.inbtn.diag<- function (diagn){
+  acrnms<- paste0(as.character(abbreviations.ds$acronym), collapse="|")
+  if(any(
+    grepl(acrnms, diagn, ignore.case = T)
+  )){
+    if(any(grepl("[ \t]in[ \t][A-Za-z]{,5}",diagn))){
+      diagn<- gsub("[ \t]in[ \t][A-Za-z]{,2}[ \t]", ",", diagn)
+    }else{
+      if(any(grepl("[ \t]", str_trim(diagn)))){ 
+        diag.split<- gsub("[ \t]", "/", diagn)
+        diag.split<- str_trim(unlist(str_split(diag.split, "/")))
+        diag.split<- diag.split[diag.split!=""]
+        if(any(sapply(diag.split, is.acronym))){
+          diag.split<-diag.split[nchar(diag.split)>1L]
+          acronmed<- diag.split[which(sapply(diag.split, is.acronym))]
+          not.acronmed<- diag.split[which(!(sapply(diag.split, is.acronym)))]
+          if(length(acronmed)==0L){
+            return(paste0(diag.split, collapse = " "))
+          }else{
+            full.nm<- as.character(sapply(acronmed, mapAcronyms))
+            diagn<- paste0(full.nm,"|",names(sapply(acronmed, mapAcronyms)))
+            #diagn=paste(c(full.nm, not.acronmed), collapse = " ")
+            return(diagn)
+          }
+          
+        }else{
+          diagn=diagn
+        }
+      }
+    }
+    split.vals<- as.character(str_trim(unlist(str_split(diagn, " "))))
+    sapply(split.vals, 
+           function(s){
+             if(any(grepl(checkFormat(s),acrnms, ignore.case = T))){
+               ret.val<- gsub(grep(acrnms
+                                   ,s, ignore.case = T, v=T)[1]
+                              , mapAcronyms(as.character(grep(acrnms
+                                                              , s
+                                                              , ignore.case = T
+                                                              , v=T)))[1]
+                              , s
+                              , ignore.case = T)
+               if(is.na(ret.val)){
+                 return(s)
+               }
+               return(ret.val)
+             }else{
+               return(s)
+             }
+             
+           })->toReturn
+    
+    toReturn_<- str_trim(as.character(paste(toReturn, collapse=" ")))
+    if(
+      all(identical(names(toReturn), as.character(toReturn)))
+    ){
+      toReturn<- as.character(toReturn)
+    }else{
+      toReturn<- paste0(toReturn_, "|", names(toReturn))
+    }
+  }else{
+    toReturn<- diagn
+  }
+  return(as.character(toReturn))
+}
+
+#split multiple comorbidities
+split.multiple.diag<-  function(diagnosis){
+  if(any(grepl("\\,|\\/|\\.|[ \t]with[ \t]|\\&|\\#|[ \t]due[ \t]to[ \t]|[ \t]in[ \t]a[ \t]known[ \t]|[ \t]and[ \t]"
+               ,diagnosis
+               ,ignore.case=T
+               , perl=T))){
+    if(all(nchar(diagnosis)<=6L)){
+      return(as.character(diagnosis))
+    }else{
+      diagnosis<- gsub("\\,|\\/|\\.|[ \t]with[ \t]|\\&|\\#|[ \t]due[ \t]to[ \t]|[ \t]in[ \t]a[ \t]known[ \t]|[ \t]and[ \t]"
+                       ,"/"
+                       ,ignore.case = T
+                       ,diagnosis)
+      
+      excptions<- unlist(
+        str_extract_all(
+          diagnosis, '([A-Za-z]{1}\\/[A-Za-z]{1,1}(\\/[A-Za-z]{1,1})(\\/[A-Za-z]{1,1})?)'))
+      
+      if(length(excptions!=0)){
+        
+        diagnosis<- str_trim(gsub(paste0(excptions,collapse = "|"), "",diagnosis))
+        
+        as.character(sapply(excptions, function(x){
+          gsub("\\/", "\\.", x)
+        }))-> exceptions.ret.v
+        
+        diagnosis<- paste0(c(diagnosis,exceptions.ret.v),collapse = "/" )
+      }
+      
+      
+      
+      diag.split<- str_trim(unlist(str_split(diagnosis, "/")))
+      diag.split<- diag.split[diag.split!=""]
+      retvalue<-as.character((diag.split))
+      return(retvalue)
+    }
+  }else{
+    return(as.character(diagnosis))
+  }
+}
+#noise
+unnecessary.noise<- c(stopwords("english"), 'male','female','child','children','father','person','patient','his','her','has','have','had'
+                      ,'stable','large','small','big','few','multiple','the','them','these','this','severe','acute','chronic'
+                      ,'that','many','is')
+
+modify.string_text<-function (string, rm.format=F){
+  if(rm.format){
+    as.character(vapply(string, function(xcter){
+      returns<-gsub("\\]|\\[|\\^|\\[ \t]|\\$|\\\\|", " " ,xcter)
+      return(
+        str_trim(paste0(unique(
+          str_trim(unlist(str_split(returns, " ")))
+        ), collapse = "")
+        ))
+    } , character(1L)))-> ret.v
+  }else{
+    ret.v<- paste0(
+      as.character(
+        vapply(string, 
+               function(noise){
+                 n1<- paste0('^',noise,'[ \t]')
+                 n2<- paste0('[ \t]',noise,'$')
+                 n3<- paste0('^',noise,'$')
+                 paste0(c(n1,n2,n3), collapse = "|")
+               }, character(1L))
+      ), collapse = "|")
+  }
+  return(ret.v)
+}
+
+unnecessary<- modify.string_text(unnecessary.noise)
+
+#remove noise
+remove.unnecessary<-function(diagnosis){
+  as.character(sapply(diagnosis, function(y){
+    y=gsub(unnecessary
+           ,"", y, ignore.case = T)
+    ous=substring(y,first = nchar(y)-3L,nchar(y))
+    ed=substring(y,first = nchar(y)-2L,nchar(y))
+    es=substring(y,first = nchar(y)-2L,nchar(y))
+    hyper=substring(y,first = 1L,nchar("hyper"))
+    if(any(grepl("ous",ous, ignore.case = T ))){
+      ret.v<- (substring(y,first = 1L,nchar(y)-3L))
+      ret.v<-paste0(substring(ret.v,1L, nchar(ret.v)-1L), "e")
+    }else if(any(grepl("ed",ed, ignore.case = T ))){ 
+      ret.v<- substring(y,first = 1L,nchar(y)-2L)
+    }else if(any(grepl("es",es, ignore.case = T ))){ 
+      ret.v<- substring(y,first = 1L,nchar(y)-2L)
+    }else if(any(grepl("hyper",hyper, ignore.case = T ))){ 
+      ret.v<- substring(y,first = nchar("hyper") + 1L,nchar(y))
+    }else{
+      ret.v<- y
+    }
+    return(str_trim(ret.v))
+  }))
+}  
+
+#format metacharacters
+checkFormat<- function (diagnosis){ 
+  diagnosis=gsub("\\[", "\\\\[", diagnosis)
+  diagnosis=gsub("\\(", "\\\\(", diagnosis)
+  diagnosis=gsub("\\)", "\\\\)", diagnosis)
+  diagnosis=gsub("\\]", "\\\\]", diagnosis)
+  diagnosis=gsub("\\}", "\\\\}", diagnosis)
+  diagnosis=gsub("\\{", "\\\\{", diagnosis)
+  diagnosis=gsub("\\()", "", diagnosis)
+  diagnosis=gsub("\\{}", "", diagnosis)
+  diagnosis=gsub("\\?", "", diagnosis)
+  diagnosis= gsub("[ \t]{2,}", " ",str_trim(diagnosis))
+  return(diagnosis)
+}
+
+methodology<-c("osa", "cosine", "jaccard", "soundex", "jw", "lcs", "qgram", "lv", "dl")
+
+
+#get appropriate icd 10
+get_icd10 = function(diagnosis){
+  if(all(nchar(diagnosis)<=6L)){
+    diagnosis<- gsub(" ", "",diagnosis)
+  }
+  if(!.ignore(diagnosis)){
+    diagnosis<- toupper(diagnosis)
+  }
+  
+  if(all(sapply(c("vaccine|drug|vaccination|injection", "reaction|hypersensitive|sentive"), function (vac){
+    grepl(vac, diagnosis, ignore.case = T)
+  }))){
+    diagnosis="reaction to vaccine"
+  }
+  icd.code=NA_character_
+  if(length(diagnosis)>1L){
+    diagnosis<- gsub("acute|severe|chronic", "",diagnosis, ignore.case = T)
+    diagnosis<- paste0(diagnosis, collapse = "|")
+  }else{
+    if(!is.recursive.mode){
+      #diagnosis<-modify.string_text(diagnosis)
+      diagnosis<- paste0("^", diagnosis, "$")
+    }
+  }
+  
+  idx = grep(checkFormat(diagnosis)
+             ,diag.icd[,Diagnosis]
+             ,v=T
+             ,ignore.case=.ignore(diagnosis))
+  if(length(idx)==0L){
+    idx= grep(checkFormat(diagnosis)
+              ,diag.icd[,Free_Text]
+              ,v=T
+              ,ignore.case=.ignore(diagnosis))
+    
+    idx.icd= grep(checkFormat(diagnosis)
+                  ,icd.ds[, diagnosis_description]
+                  ,v=T
+                  ,ignore.case=T)
+    
+    if(isTRUE(length(idx)==0L 
+              & length(idx.icd)==0L)){ 
+      
+      #remove any digit
+      diagnosis<- gsub("[[:digit:]]", "", diagnosis)
+      
+      if(!.ignore(diagnosis)){
+        diagnosis=mapAcronyms(diagnosis)
+        idx = grep(checkFormat(diagnosis)
+                   ,diag.icd[,Diagnosis]
+                   ,v=T
+                   ,ignore.case=.ignore(diagnosis))
+        if(length(idx)==0L | all(is.na(idx))){
+          idx= grep(checkFormat(diagnosis)
+                    ,diag.icd[,Free_Text]
+                    ,v=T
+                    ,ignore.case=.ignore(diagnosis))
+        }
+        
+      }else{
+        diagnosis<- remove.unnecessary(diagnosis)
+        suppressWarnings({ 
+          vapply(methodology,
+                 function(m){
+                   ret.v<-diag.icd[,Free_Text][amatch(tolower(str_trim(diagnosis))
+                                                      ,tolower(diag.icd[,Free_Text])
+                                                      ,maxDist = 5L
+                                                      ,method=m)]
+                   ret.v_<-diag.icd[,Diagnosis][amatch(tolower(str_trim(diagnosis))
+                                                       ,tolower(diag.icd[,Diagnosis])
+                                                       ,maxDist = 5L
+                                                       ,method=m)]
+                   ret.v_1<- icd.ds[,diagnosis_description][amatch(tolower(str_trim(diagnosis))
+                                                                   ,tolower(icd.ds[,diagnosis_description])
+                                                                   ,method=m
+                                                                   ,maxDist = 5L)]
+                   ret.v<-unique(c(ret.v, ret.v_, ret.v_1))
+                   if(length(ret.v)<3L){
+                     ret.v<- c(ret.v, rep(NA_character_, 3L-length(ret.v)))
+                   }else if(length(ret.v)>3L){
+                     ret.v<-ret.v[!is.na(ret.v)]
+                     if(length(ret.v)==3L){
+                       return(ret.v)
+                     }else{
+                       if(length(ret.v)>3L){
+                         ret.v<- ret.v[1L:3L]
+                       }else{
+                         ret.v<- c(ret.v, rep(NA_character_, 3L-length(ret.v)))
+                       }
+                     }
+                   }else{
+                     ret.v
+                   }
+                 }, character(3L))
+        })->idx
+        
+        idx<- idx[!is.na(idx)]
+        idx=idx[idx!=""]
+        idx<- idx[idx!=c("^NA$")]
+        if(isTRUE(length(idx)==0L 
+                  || all(is.na(idx)))){
+          
+          is.recursive.mode<<-T
+          #noise
+          
+          #diagnosis<- get("diagnosis", envir = .GlobalEnv)
+          #diagnosis<- remove.unnecessary()
+          if(is.recursive.mode){
+            is.recursive.mode<<-F
+            #diagnosis<- modify.string_text(diagnosis, rm.format = T)
+            diagnosis<- paste0(unlist(str_extract_all(diagnosis, "[A-Za-z]+")), collapse = " ")
+            return(Recall(diagnosis))
+          }else{
+            icd.codes<- icd.code
+          }
+          
+          
+        }else{
+          idx<- appropriate.classfication(idxs = idx, diagnosis = diagnosis)
+          if(!is.null(idx)){
+            mostFrequent<- names(table(idx)[(table(idx)>=4L)][order(table(idx)[(table(idx)>=4L)], decreasing = T)])
+            if(length(mostFrequent)!=0L){
+              mostFrequent<- mostFrequent[amatch(tolower(diagnosis), as.character(sapply(mostFrequent, tolower)), method="cosine", maxDist = 1)]
+            }else{
+              if(is.null(mostFrequent)){
+                mostFrequent<-NA_character_
+              }
+            }            
+            if(isTRUE
+               (is.na(mostFrequent) || length(mostFrequent)==0L)){
+              idxNames<- names(table(idx)[(table(idx)>=3L)][order(table(idx)[(table(idx)>=3L)], decreasing = T)])
+              
+              if(isTRUE(grepl("[ \t]", str_trim(diagnosis)))){  
+                if(length(idxNames)!=0L){ 
+                  idx<- idxNames[amatch(tolower(diagnosis), as.character(sapply(idxNames, tolower)), method="cosine", maxDist = 5)]
+                }else{
+                  nums<- (table(idx)[order(table(idx), decreasing = T)][c(1,2)])
+                  diff<- as.numeric(nums[1])-as.numeric(nums[2])
+                  if(isTRUE(diff<=2L)){
+                    idx<- idx[amatch(tolower(diagnosis), tolower(idxNames),method="jaccard", maxDist = 5L)]
+                  }
+                  
+                }
+              }#else{
+              #review
+              #                 if(isTRUE(nchar(diagnosis)>5L)){
+              #                   diagnosis<- paste0(unlist(str_extract_all(diagnosis, "[A-Za-z]+")), collapse = " ")
+              #                   part1<- substring(diagnosis, 1L, 5L)
+              #                   part2<- substring(diagnosis, 6L, nchar(diagnosis))
+              #                   resultant<- paste0(part1, " ", part2)
+              #                   if(!is.recursive.mode){
+              #                     is.recursive.mode<<-T
+              #                     return(Recall(resultant))
+              #                   }
+              #                   
+              #                 }
+              #                 
+              #               }
+            }else{
+              idx=mostFrequent
+            }
+            
+          }else{
+            idx=NA_character_
+          }
+          
+        }
+      }
+      
+      if(isTRUE(all(is.na(idx)) 
+                || length(idx)==0L)){
+        icd.codes<-icd.code
+      }else{
+        if(any(grepl("[ \t]", str_trim(diagnosis))) | length(idx)==1L){ 
+          vapply(idx,
+                 function(i){
+                   ret.v<- as.character(diag.icd[Free_Text %chin% str_trim(i), Icd_10])
+                   if(length(ret.v)==0L){
+                     ret.v<-as.character(diag.icd[Diagnosis %chin% str_trim(i), Icd_10])
+                     if(length(ret.v)==0L){
+                       ret.v<-as.character(icd.ds[diagnosis_description  %chin% str_trim(i),code])
+                       if(length(ret.v)==0L)
+                         ret.v<- NA_character_
+                     }
+                   }else{
+                     ret.v
+                   }
+                   ret.v<- names(table(ret.v)[order(table(ret.v),decreasing =T )])[1]
+                   if(is.null(ret.v)){
+                     return(NA_character_)
+                   }else{
+                     return((ret.v))
+                   }
+                   
+                 }, character(1L)
+          )->icd.codes
+        }else{
+          icd.codes<- NA_character_
+        } 
+        
+        
+        icd.codes[icd.codes==""]<-NA_character_
+        icd.codes<- names(
+          table(icd.codes)[order(table(icd.codes), decreasing = T)]
+          [1])
+        if(is.null(icd.codes)){
+          icd.codes<- NA_character_
+        }
+        
+        if(isTRUE(all(!is.na(icd.codes) & length(icd.codes)!=0L))){
+          return(
+            formatICD(icd.codes)
+          )
+        }
+      }
+    }else{
+      
+      idx_1=idx
+      if(isTRUE(any(!is.na(idx_1)) 
+                && length(idx_1)!=0L)
+      ){
+        if(length(unique(idx_1))>1L){
+          diagIdx<- idx_1[amatch(tolower(diagnosis), tolower(idx_1), maxDist = 5L, method = "osa")]
+          if(!is.na(diagIdx)){
+            icd.codes<- as.character(diag.icd[Free_Text %chin% str_trim(diagIdx), Icd_10])
+          }else{
+            as.character(unlist(
+              sapply(idx_1,
+                     function(i){
+                       as.character(diag.icd[Free_Text %chin% str_trim(i), Icd_10])
+                     })))->icd.codes
+            if(length(icd.codes)<2){
+              icd.codes<- str_trim(gsub("\\:$|\\;$|^\\:|^\\;","", icd.codes))
+            }
+            if(any(grepl("\\:",icd.codes))){
+              codes<-str_trim(unlist(str_split(icd.codes, ":")))
+              idx<- gsub("\\,|\\/", ",", idx)
+              idxs<- as.character(unlist(sapply(idx, function(x){
+                x<-as.character(split.multiple.diag(x))
+                #c(x, get.acrynm.inbtn.diag(x))
+                
+              })))
+              unlist(sapply(1L:length(codes), function (i){
+                if(isTRUE(any(grepl(checkFormat(gsub(" ", "|",idxs[i])), diagnosis, ignore.case = T)))){
+                  icd.codes=codes[i]
+                }
+              }))->icd.codes
+            }else{
+              icd.codes<-icd.codes
+            }
+            icd.codes<- names(
+              table(icd.codes)[order(table(icd.codes), decreasing = T)]
+              [1L])
+            if(is.null(icd.codes) || icd.codes==""){
+              icd.codes<- NA_character_
+            }else{
+              return(formatICD(icd.codes))
+            }
+            
+          }
+        }else{
+          icd.codes<- as.character(diag.icd[Free_Text %chin% str_trim(unique(idx_1)), Icd_10])
+          icd.codes<- names(
+            table(icd.codes)[order(table(icd.codes), decreasing = T)]
+            [1L])
+          if(is.null(icd.codes) || icd.codes==""){
+            icd.codes<- NA_character_
+          }else{
+            return(formatICD(icd.codes))
+          }
+        }
+        
+      }else{
+        icd.codes<- icd.ds[diagnosis_description==idx.icd, code]
+        if(all(unique(table(icd.codes))==1L)){
+          idx.match<- idx.icd[amatch(diagnosis, idx.icd,method = "cosine", maxDist = 5L)]
+          if(!is.na(idx.match)){
+            icd.codes<- icd.ds[diagnosis_description==idx.match, code][1]
+            return( formatICD(icd.codes))
+          }
+        }else{
+          icd.codes<- names(
+            table(icd.codes)[order(table(icd.codes), decreasing = T)]
+            [1])
+          return(formatICD(icd.codes))
+        }
+      }
+    }
+  }else{
+    idx= c(str_trim(unlist(str_split((idx), ";"))))
+    idx<- idx[idx!=c("")]
+    idx<- idx[idx!=c("^NA$")]
+    
+    idx<- appropriate.classfication(idxs = idx, diagnosis = diagnosis)
+    
+    mostFrequent<- names(table(idx)[(table(idx)>10L)][order(table(idx)[(table(idx)>10L)], decreasing = T)])[1L]
+    if(is.na(mostFrequent)){
+      relatedIdx<- idx[amatch(tolower(diagnosis), tolower(idx), maxDist = 5L, method="cosine")]
+      if(is.na(relatedIdx)){
+        idx=names(table(idx)[order(table(idx), decreasing = T)])[1L]
+      }else{
+        idx=relatedIdx
+      }
+      idx<- gsub("ICD10", "", idx, ignore.case = F)
+      icd.codes<- unlist(str_extract_all(idx, "[A-Z]{1}[0-9]{2}(\\.[0-9]{1}?)?"))
+      if(any(length(icd.codes)>0L | !is.na(icd.codes))){
+        return(
+          formatICD(icd.codes)
+        ) 
+      }
+      
+    }else{
+      idx<- gsub("ICD10", "", mostFrequent, ignore.case = F)
+      icd.codes<- unlist(str_extract_all(mostFrequent, "[A-Z]{1}[0-9]{2}(\\.[0-9]{1}?)?"))
+      if(any(length(icd.codes)>0L | !is.na(icd.codes))){
+        return(
+          formatICD(icd.codes)
+        ) 
+      }
+    }
+    
+    
+  }
+  
+  # if missing try recursions
+  
+  if(all(is.null(icd.codes))){
+    icd.codes<- NA_character_
+  }
+  
+  if(all(is.na(icd.codes))){
+    diagnosis<-str_trim(as.character(gsub("infection"
+                                          ,""
+                                          , diagnosis
+                                          , ignore.case = T))
+    )
+    TrySplits<- str_trim(unlist(str_split(diagnosis, " ")))
+    #diagnosis<- modify.string_text(diagnosis, rm.format = T)
+    diagnosis<- paste0(unlist(str_extract_all(diagnosis, "[A-Za-z]+")), collapse = " ")
+    
+    if(all(is.na(icd.codes)) & length(TrySplits)>1L){
+      TrySplits<- as.character(sapply(TrySplits, mapAcronyms))
+      TrySplits<-TrySplits[!is.na(TrySplits)]
+      TrySplits<-TrySplits[nchar(TrySplits)>=3L]
+      
+      if(isTRUE(length(TrySplits)>1L)){
+        longer.length<-sapply(TrySplits, nchar)
+        TrySplits<- names(longer.length[order(longer.length, decreasing=T)][1])
+      }
+      if(!is.recursive.mode){
+        is.recursive.mode<<-T
+        sapply(TrySplits, function (n){
+          attach_icd(n, T)
+        })->icd.codes
+      }
+    }else if(all(is.na(icd.codes)) & length(TrySplits)==1L){
+      if(nchar(diagnosis)<=9L){
+        return(icd.codes)
+      }else{
+        diagnosis<- substring(diagnosis, 1, 9)
+        icd.codes<- attach_icd(diagnosis, T)
+      }
+    }else{
+      return(icd.codes)
+    }
+    
+    icd.codes<- icd.codes[!is.na(icd.codes)]
+    if(length(icd.codes)>1L){
+      unlist(
+        sapply(1L:length(icd.codes), function (i){
+          nms<- names(icd.codes[i])
+          desc<- str_trim(unlist(str_split(
+            as.character(icd.codes[i]), "-")))
+          if(grepl(checkFormat(nms), desc[2L], ignore.case = T)){
+            return(desc[1L])
+          }else{
+            return({
+              sapply(TrySplits, function (l){
+                if(!is.na(amatch(l, desc[2L], method = "osa", maxDist = 8L))){
+                  return(desc[1L])
+                }else{
+                  if(grepl(checkFormat(substring(l, 1L, 6L)), desc[2L], ignore.case = T)){
+                    return(desc[1L])
+                  }
+                }
+              })})
+          }
+        }))->ret.val
+      ret.val[is.null(ret.val)]<- NA_character_
+      if(all(is.na(ret.val))){
+        
+        icd.codes<- icd.codes[1L]
+      }else{
+        icd.codes<- ret.val
+      }
+    }
+    if(is.null(icd.codes)){
+      icd.codes<- NA_character_
+    }
+    icd.codes<- word(icd.codes, 1,1,sep = "-")
+    return(formatICD(as.character(icd.codes)))
+  }else{
+    icd.code<- unique(icd.codes)[1L]
+    return(formatICD(icd.code))
+  }
+  
+}
+
+##format icd returns
+
+formatICD<- function(icd.codes){
+  if(any(grepl("\\:", icd.codes, perl=T))){
+    icd.code<- unique(icd.codes[which(!grepl("\\:", icd.codes, perl=T))])
+    if(all(is.na(icd.code)) 
+       || length(icd.code)==0L){
+      splits<-str_trim(unlist(str_split(icd.codes, ":")))
+      splits<-icd.ds[code %in% splits, diagnosis_description]
+      
+      diagnosis<- get("diagnosis",pos=1L,envir = as.environment(parent.frame()))
+      diag.splits<- str_trim(unlist(str_split(diagnosis, " ")))
+      idx=as.character(unlist(sapply(diag.splits
+                                     ,function (l){
+                                       ret.value<- grep(checkFormat(l), splits, v=T, ignore.case = T)
+                                       ret.value
+                                       if(length(ret.value)==0L){
+                                         grep(checkFormat(substring(diagnosis, 1, 4)), splits, v=T, ignore.case = T)
+                                       }
+                                     })))[1L]
+      if(is.na(idx) || length(idx)==0L){
+        idx<-splits[amatch(tolower(diagnosis), tolower(splits), method="cosine", maxDist = 7L)]
+      }
+      icd.code<-unique(icd.ds[diagnosis_description %in% idx, code])
+      if(isTRUE(is.na(icd.code) || length(icd.code)==0L )){
+        icd.code<-unique(icd.ds[diagnosis_description %in% splits, code])[1L]
+      }
+    }
+  }else{
+    icd.code<- unique(icd.codes)[1L]
+  }
+  if(isTRUE(icd.code=="")){
+    icd.code<- NA_character_
+  }
+  return(icd.code)
+}
+#classify diag
+appropriate.classfication<- function(idxs,diagnosis,...){
+  diagnosis<- global.diag
+  if(!is.recursive.mode){
+    if(grepl("severe", diagnosis, ignore.case = T)){
+      ret.v<- idxs[which(grepl('severe',idxs, ignore.case = T))]
+      if(length(ret.v)!=0L){
+        return(ret.v)
+      }else{
+        return(idxs)
+      }
+    }else{
+      ret.v<- idxs[which(!grepl('severe',idxs, ignore.case = T))]
+      if(length(ret.v)!=0L){
+        return(ret.v)
+      }else{
+        return(idxs)
+      }
+    }
+  }else{
+    return(idxs)
+  }
+}
+
+#evaluate final icd10Code
+check_ICDcode<- function(icd10Code){
+  
+  icd10Code<- as.character(sapply(icd10Code, function (xter){
+    xter<- str_trim(as.character(xter))
+    if(grepl('^[0-9]{1}', xter)){
+      return(NA_character_)
+    }
+    xter<- ifelse(xter=="",NA_character_, xter)
+    return((xter))
+  }))
+  diagnosis<-icd.ds[is.element(code, icd10Code), icd10]
+  if(length(diagnosis)==0L){
+    icd10Code<-str_trim(sub("[A-Z]{,1}$","",icd10Code))
+    if(isTRUE(any(str_detect(icd10Code, "\\.")))){
+      icd10Code<-sprintf( "%s", paste0(word(icd10Code, 1L, 1L, sep = "\\."),".",9L))
+      if(length(icd.ds[is.element(code, icd10Code), icd10])==0L){
+        icd10Code<-sprintf( "%s", paste0(word(icd10Code, 1L, 1L, sep = "\\.")))
+        if(length(icd.ds[is.element(code, icd10Code), icd10])==0L){
+          icd10Code<-sprintf( "%s", paste0(word(icd10Code, 1L, 1L, sep = "\\."),".",0L))
+        }else{
+          return(icd10Code)
+        }
+        if(length(icd.ds[is.element(code, icd10Code), icd10])==0L){
+          if(!is.recursive.mode){
+            is.recursive.mode<<-T
+            return(Recall(icd10Code))
+          }else{
+            return(NA_character_)
+          }
+        }else{
+          return(icd10Code)
+        }
+      }else{
+        return(icd10Code)
+      }
+    }
+  }
+  return(icd10Code)
+}
+
+#attach a icd code to diagnosis
+
+attach_icd<-  function(diagnosis, combined=F){
+  global.diag<<- diagnosis
+  is.recursive.mode<<-F
+  icd.code<-NA_character_
+  if(isTRUE(is.na(diagnosis) 
+            || is.null(diagnosis) 
+            || diagnosis=="")){
+    return(icd.code)
+  }else if(isTRUE(
+    grepl("^[A-Za-z]{1,2}[0-9]{1,2}(\\.[0-9][A-Za-z]?)?",diagnosis,ignore.case = T, perl = T)
+  )
+  ){
+    splits<- unlist(str_split(diagnosis, " "))
+    icd<- sub("\\,", "-", str_trim(splits[1]))
+    desc<- paste(str_trim(splits[-1]), collapse = " ")
+    desc<- sub("^\\,", "", desc)
+    if(any(grepl("-", icd))){
+      diagnosis<- str_trim(paste(icd, desc, collapse = " "))
+      diagnosis<- gsub("-[ \t]", "-", diagnosis)
+    }else{
+      icd<- paste0(icd, "-")
+      diagnosis<- str_trim(paste(icd, desc, collapse = " "))
+      diagnosis<- gsub("-[ \t]", "-", diagnosis)
+    }
+    icdCode<-str_trim(unlist(str_split(diagnosis, "-"))[1L])
+    icdCode<- check_ICDcode(icdCode)
+    if(!combined){
+      diagnosis<- icdCode[1L]
+    }else{
+      diagnosis<- icd.ds[rubric_kind=="preferred" & is.element(code, icdCode), icd10][1L]
+    }
+    return(diagnosis)
+  }else{
+    if(nchar(diagnosis)>1L){
+      if(!.ignore(diagnosis)){
+        diagnosis<- toupper(diagnosis)
+      }
+      diags<-as.character(unlist(sapply(split.multiple.diag(diagnosis)
+                                        , mapAcronyms)
+      ))
+      sapply(diags,
+             function(diagnosis){
+               diagnosis<-str_trim(as.character(gsub("suspected[ \t]|[ \t]suspect[ \t]|[ \t]\\-[ \t]|[ \t]possible[ \t]|[ \t]acute[ \t]|[ \t]disease[ \t]|[ \t]known[ \t]|[ \t]diseased[ \t]|[ \t]diseas[ \t]|[ \t]part[ \t]"
+                                                     ,""
+                                                     , diagnosis
+                                                     , ignore.case = T))
+               )
+               diagnosis<- remove.unnecessary(diagnosis)
+               diagnosis<- gsub("[ \t]{2,}", " ",str_trim(diagnosis))
+               if(nchar(diagnosis)>2L){
+                 diagnosis<- as.character(unlist(sapply(diagnosis,function(x) return(get.acrynm.inbtn.diag(x)))))
+                 icd.idx<- str_trim(get_icd10(diagnosis))
+                 if(isTRUE(all(is.na(icd.idx)))){
+                   return(icd.code)
+                 }else{
+                   codes<- check_ICDcode(icd.idx)
+                   if(combined){
+                     ret.val<- icd.ds[is.element(code, codes) & rubric_kind=="preferred", icd10][1]
+                     return(ret.val)
+                   }else{
+                     ret.val<- codes[1]
+                     return(ret.val)
+                   }
+                 }
+               }else{
+                 return((icd.code))
+               }
+             })->code
+      
+      icd.code<- c(as.character(code[!is.na(code)]))
+      icd.code[length(icd.code)==0L]<-NA
+      
+    }else{
+      icd.code
+    }
+    icd.code<- unique(as.character(unlist(icd.code)))
+    ret.val<- paste0(icd.code, collapse = ";")
+    ret.val<- gsub("^NA$",NA_character_,ret.val)
+    return(ret.val)
+  }
+}

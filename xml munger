@@ -1,0 +1,407 @@
+#read xml
+pkgload("XML")
+xmlfile=xmlTreeParse(paste0(data.path,"/icd102010en.xml"))
+
+#access content of root
+xmltop=xmlRoot(xmlfile, skip = T)
+xmltop.List= xmlToList(xmltop)
+
+#icd code
+is.icdformat<- function (x){
+  if(isTRUE(
+    grepl("^[A-Z]{1,1}[0-9]{2,2}(\\.?[0-9]{1,1}[A-Z]?)?$",x,ignore.case=F,perl = T)
+    || grepl("^[0-9]{4,4}(\\.?[0-9]{1}?[ \t]+?)?",x, ignore.case=F, perl=T)
+  )){
+    return(T)
+  }else{
+    return(F)
+  }
+}
+
+#exact attribute
+evaluate.desc<- function (d, value=F){
+ # browser()
+  toReturn<- get("toReturn", pos = 1, envir = parent.frame())
+  unlist(lapply(1:length(toReturn), function(k){
+    #browser()
+    k<-toReturn[[k]]
+    if(!is.null(k)){
+      k=unlist(lapply(k, unlist))
+      
+      names(k)[str_trim(names(k))==""]<-"Label"
+      nms<- names(k)
+      excl<- any(as.character(k) %in% "exclusion")
+      dups<- nms[which(duplicated(nms))]
+      nms[which(duplicated(nms))]<-paste0(nms[which(duplicated(nms))], 1:length(dups))
+      names(k)<-nms
+      if(!value){
+        #browser()
+        if(excl){
+          return(F)
+        }else{
+          return(any(grepl(d, as.character(k))))
+        }
+        
+      }else{
+        if(excl){
+          return(NULL)
+        }else{
+          val<-k[which(grepl(d,k))]
+          val<- val[which(!is.na(unlist(val)))]
+          return(as.character(val))
+        }
+        
+      }
+    }else{
+      return(NULL)
+    }
+    
+  }))}
+
+#lags
+get.lags<- function(x){
+  ln<-1:length(x)
+  #ln<- unique(ceiling(ln/2))
+  idx<- 1L
+  lags<- (sapply(ln,function(l){
+    if(!is.na(x[(idx+1)])){
+      lag<-  x[c(1,(idx+1))]
+      lag=paste(lag, collapse = "")
+      idx<<-idx+1L
+      lag<-gsub("\\:", " ", lag)
+      return(lag)
+    }else{
+      return(NULL)
+    }
+  }))
+  return(as.character(sapply(unlist(lags), unlist)))
+}
+
+#extract icd
+
+
+return.codes<- function (dt){
+  toReturn<- get("toReturn", pos = 1, envir = parent.frame())
+  if(any(grepl("exclusion", as.character(dt), ignore.case = F))){
+    return(NULL)
+  }
+  if(any(evaluate.desc("code|text"))){
+    nms<- names(lapply(dt[[1]], unlist))
+    if(is.null(nms)){
+      nms<- names(dt)
+    }
+    dt=data.table(rbind(unlist(dt)))
+    if(is.null(dt) || ncol(dt)<=1L){
+      return(NULL)
+    }
+    
+    setnames(dt, nms)
+    codes=apply(dt,1, function (k){
+      k[which(!grepl("\\_|\\-", k))]
+    })
+    codes=unique(unlist(lapply(codes, function (k){
+      k=unlist(lapply(k, unlist))
+      unique(unlist(k)[which(is.icdformat(unlist(k)))])
+    })))
+    
+    if(length(codes)!=0L){
+      if(length(codes)>1L){
+        code<- cbind(as.character(unlist(codes)))
+        code<- data.table(code)
+        setnames(code, "code")
+        code<- as.matrix(code)
+        return(code)
+      }else{
+        code<- codes
+        if(!is.na(code)){
+          return(code)
+        }else{
+          if(length(codes)>1L & all(grepl("code",names(codes), ignore.case = T ))){
+            ln<- length(grep("code", names(codes), ignore.case = T, v=T))
+            names(codes)<- paste0("code", 1:ln)
+          }
+          
+          try({
+            if(any(evaluate.desc("^inclusion$"))){
+              code<- evaluate.desc("Reference.text", value = T)
+              if(!is.na(code) || length(code)!=0)
+                return(code)
+            }
+            
+            if(any(evaluate.desc("^inclusion$")) & any(evaluate.desc("^category$"))  ){
+              code<- evaluate.desc("code", value = T)
+              if(!is.na(code) || length(code)!=0)
+                return(code)
+            }
+            if(any(evaluate.desc("^preferred$")) & any(evaluate.desc("^category$"))  ){
+              code<- evaluate.desc("code", value = T)
+              if(!is.na(code) || length(code)!=0)
+                return(code)
+            }
+            #    if(any(evaluate.desc("^exclusion$")) & any(evaluate.desc("^category$"))  ){
+            #      code<-codes["code"] 
+            #      if(!is.na(code) || length(code)!=0)
+            #        return(code)
+            #    }
+            
+            if(any(evaluate.desc("^exclusion$"))){
+              code<- evaluate.desc(".attrs.code", value = T)
+              if(!is.na(code) || length(code)!=0)
+                return(code)
+            }
+            
+          }, silent=T)
+          
+          ret.v<-codes[names(codes)
+                       [which(grepl("code",names(codes), ignore.case = T))]
+                       ]
+          if(length(ret.v)!=0){
+            codes=ret.v
+          }else{
+            codes=codes
+          }
+          
+        }
+      }
+    }else{
+      return(NULL)
+    }
+    codes<- unique(as.character(codes))
+    return(codes)
+    
+  }else{
+    return(NULL)
+  }}
+#extract icd label
+return.code.descriptions<- function (dt){
+  if(any(grepl("exclusion", as.character(dt), ignore.case = F))){
+    return(NULL)
+  }
+  nms<- names(lapply(dt[[1]], unlist))
+  if(is.null(nms)){
+    nms<- names(dt)
+  }
+  dt=data.table(rbind(unlist(dt)))
+  if(is.null(dt) || dim(dt)==0){
+    return(NULL)
+  }
+  if(all(dim(dt)==0L)){
+    return(NULL)
+  }else{
+    setnames(dt, nms)
+    desc=apply(dt,1, function (k){
+      lab<- unique((lapply(k, function (m){
+        m=m[which(!sapply(m, is.icdformat))]
+        if(nchar(m)>3L && length(m)!=0){
+          return((k))
+        }else{
+          return(NULL)
+        }
+      })))
+      lapply(lab, unlist)
+    })
+    desc<-unlist(lapply(desc, unlist))
+    if(!is.null(desc)){
+      names(desc)[str_trim(names(desc))==""]<-"Label"
+      nms<- names(desc)
+      dups<- nms[which(duplicated(nms))]
+      nms[which(duplicated(nms))]<-paste0(nms[which(duplicated(nms))], 1:length(dups))
+      names(desc)<-nms
+       if(isTRUE(any(as.character(desc[".attrs.kind"]) %in% c("text", "note")))){
+        return(NULL)
+      }
+      codes<-unique(as.character(desc[which(sapply(desc, is.icdformat))]))
+      desc<- desc[grep("^text|label", names(desc),ignore.case = T, v=T)]
+      if(length(desc)!=0L){
+        descrptions<- try({
+          unique(as.character(desc[names((desc)
+          )[which(!grepl("name",names((desc)), ignore.case = T))]
+          ]))
+        },silent = T)
+        
+        if(isTRUE(is.element("try-error", class(descrptions)))
+           || length(descrptions)==0
+           || is.na(descrptions)  ){
+          return(NULL)
+        }else{
+          toReturn<- get("toReturn", pos = 1, envir = parent.frame())
+          descrptions<- descrptions[which(!sapply(descrptions, is.icdformat))]
+          descrptions<-  descrptions[which(!grepl("^[A-Z]{1}[0-9]{2}",descrptions))]
+          
+          if(all(!is.na(descrptions)) & all(!grepl("\\:", descrptions))){
+            if(length(codes)!=length(descrptions)){
+              if(length(codes)>length(descrptions)){
+                assign("icd_", codes[1:length(descrptions)], -1, inherits = T)
+                return(descrptions)
+                
+              }else if(length(codes)==1L & length(descrptions)>1L){
+                assign("icd_", rep(codes, length(descrptions)), -1, inherits = T)
+                return(descrptions)
+              }else{
+                if(length(descrptions)>length(codes))
+                  return(descrptions[1:length(codes)])
+              }
+              
+            }else{
+              return(descrptions)
+            }
+            
+          }else{
+            if(any(evaluate.desc("^block$"))){
+              lab<-descrptions["Label"] 
+              if(!is.na(lab))
+                return(lab)
+            }else{
+              if(length(descrptions)>1L){
+                lab<-get.lags(desc)
+                lab<-cbind(lab)
+                return(lab)
+              }else{
+                return(descrptions)
+              }
+              
+              #             if(any(evaluate.desc("^preferred$")) & any(evaluate.desc("^aster$"))){
+              #               lab<<-descrptions["Label"] 
+              #               if(!is.na(lab))
+              #                 return(lab)
+              #             }
+              #             if(any(evaluate.desc("^exclusion$"))){
+              #               lab<<-descrptions["Label"] 
+              #               if(!is.na(lab))
+              #                 return(lab)
+              #             }
+              #             if(any(evaluate.desc("^inclusion$"))){
+              #               text.val<- descrptions[grep("^text",names(descrptions), v=T, ignore.case = F)]
+              #               text.val<- paste(text.val, collapse = "")
+              #               lab<<- gsub("\\:", " ", text.val)
+              #               if(!is.na(lab))
+              #               return(lab)
+              #             }
+              #             if(is.na(lab)){
+              #               lab<<-descrptions[1]
+              #               return(lab)
+              #             }
+            }
+          }
+        }
+      }else{
+        return(NULL)
+      }
+      
+      #descrptions<- descrptions[which(!grepl("^inclusion$|^in brackets$|^aster$|^list$|^en$|^default$|^Use additional code$|^dagger$", ignore.case = T,descrptions))]
+    }else{
+      return(NULL)
+    }
+    
+  }
+  
+}
+
+# Thr' xmlfile
+
+xmlists<- lapply(1:length(xmltop.List), function(lst){
+  #if(any(lst==1500)) browser()
+    #browser()
+  lst=xmltop.List[lst]
+  max_length <- max(unlist(lapply(lst,length)))
+  nm_filled <- lapply(lst,function(x) {
+    ans <- rep(NA,length=max_length)
+    ans[1:length(x)]<- x
+    return(ans)
+  })
+  newtest=data.table(do.call(rbind, nm_filled))
+  toReturn<-lapply(newtest, unlist)
+  
+  toReturn<- lapply(1:length(toReturn), function (nk){
+    val<- toReturn[[nk]]
+    if(any(c("name","value") %in% names(val)
+           || length(val)==1L
+    )){
+      return(NULL)
+    }else{
+      return(val)
+    }
+    
+  })
+  
+  test.try.again<- lapply(1:length(toReturn), function(k){
+    x=toReturn[k]
+    if(all(is.null(unlist(x)))){
+      return(NULL)
+    }
+    icd_=return.codes(x)
+    if(all(is.null(icd_))){
+      icd_<- evaluate.desc("code", value = T)
+    }
+    
+    if(length(icd_)==1L &  length(unique(evaluate.desc("code", value = T)))==1L
+       & length(unique(evaluate.desc("Label", value = T)))>1L){
+      #icd_<- rep(icd_, length(unique(evaluate.desc("Label", value = T))))
+      desc<- unique(evaluate.desc("Label", value = T))
+      lab1<- desc[which(grepl("\\:", desc))]
+      lab2<-desc[which(!grepl("\\:", desc))]
+      desc<- gsub("\\:", " ",paste0(lab1, c(lab2)))
+      icd_<- rep(icd_, length(desc))
+      
+    }else{
+      desc=unique(return.code.descriptions(x))
+    }
+    #if(any(grepl("M03.1", icd_)))browser()
+    
+    code<-icd_
+    if(all(is.null(c(code,desc)))){
+      return(NULL)
+    }else if(!is.null(code) & !is.null(desc)) {
+      if(length(code)==length(desc)){
+        return(cbind(code, desc))
+      }else{
+        if(length(code)>length(desc)){
+          code<- code[1:length(desc)]
+          return(cbind(code, desc))
+        }else{
+          desc<- desc[1:length(code)]
+          return(cbind(code, desc))
+        }
+      }
+    }else if (!is.null(code) & is.null(desc)){
+      inclusions<- unlist(lapply(1:length(toReturn)
+                                 ,function (k){
+                                   return.code.descriptions(toReturn[k])
+                                 }))
+      inclusions.code<- unlist(lapply(1:length(toReturn)
+                                      ,function (k){
+                                        return.codes(toReturn[k])
+                                      }))
+      if(isTRUE(length(inclusions.code)==1L 
+                & length(inclusions.code)!=1L)){
+        returns<- data.table(cbind(rep(inclusions.code, length(inclusions)), inclusions), keep.rownames = F)
+        setnames(returns, c("code", "desc"))
+        return(returns)
+      }else{
+        if(isTRUE(k!=length(toReturn))){
+          if(any(!is.null(return.code.descriptions(toReturn[(k+1L)])))
+             & all(is.null(return.codes(toReturn[(k+1L)])))){
+            desc=return.code.descriptions(toReturn[(k+1L)])[1]
+            return(cbind(code, desc))
+          }
+        }else{
+          return(NULL)
+        }
+      }
+      
+    }else{
+      return(NULL)
+    }
+  })
+  return(
+    do.call(rbind, 
+            lapply(test.try.again, function(l){
+              if(length(l)==2L){
+                return(l)
+              }
+            }))
+  )
+  
+})
+
+codes.ds<- data.table(do.call(rbind, xmlists))
